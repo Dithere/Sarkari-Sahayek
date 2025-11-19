@@ -21,9 +21,9 @@ from datetime import datetime
 # -------------------------------
 # 🤖 Initialize OpenAI Client
 # -------------------------------
-client = OpenAI(
-    api_key="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"
-)
+import os
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # -------------------------------
 # 🚀 Initialize FastAPI App
