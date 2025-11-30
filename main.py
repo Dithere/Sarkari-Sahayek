@@ -9,14 +9,11 @@ from openai import OpenAI
 import uvicorn
 import json
 import requests
-import pytesseract
-pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+from google.cloud import vision # Updated to use Google Vision API
 
-
-from PIL import Image, ImageDraw
-import numpy as np
-import io
-import cv2
+# NOTE: Removed pytesseract and related imports and configuration.
+# The following imports are retained but no longer used in `analyze_form`
+# They might be relevant if image manipulation were added later.
 from datetime import datetime
 
 # -------------------------------
@@ -25,6 +22,20 @@ from datetime import datetime
 import os
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# -------------------------------
+# 🌟 Initialize Google Vision Client
+# -------------------------------
+# NOTE: This assumes 'google-cloud-vision' is installed and 
+# GOOGLE_APPLICATION_CREDENTIALS is set up in the environment.
+try:
+    vision_client = vision.ImageAnnotatorClient()
+    VISION_ENABLED = True
+except Exception as e:
+    # If the environment lacks the correct setup or library
+    vision_client = None
+    VISION_ENABLED = False
+    print(f"WARNING: Google Vision client failed to initialize: {e}")
 
 # -------------------------------
 # 🚀 Initialize FastAPI App
@@ -105,6 +116,7 @@ Instructions for output:
             data = json.loads(raw_reply)
             return data
         except json.JSONDecodeError:
+            # If the LLM returns non-JSON text unexpectedly
             return {"answer": raw_reply, "steps": [], "tables": [], "links": []}
 
     except Exception as e:
@@ -112,26 +124,35 @@ Instructions for output:
         return {"answer": "⚠️ Server error. Please try again later.", "steps": [], "tables": [], "links": []}
 
 # -------------------------------
-# 🧾 Document & Form Helper
+# 🧾 Document & Form Helper (Now using Google Vision)
 # -------------------------------
 @app.post("/api/analyze_form")
 async def analyze_form(file: UploadFile = File(...), session_id: str = Form(default="")):
     """
     1️⃣ Accepts image or screenshot of a government form.
-    2️⃣ Detects empty or blank fields via OCR.
+    2️⃣ Detects empty or blank fields via Google Vision OCR.
     3️⃣ Uses LLM to suggest what should be filled.
     4️⃣ Returns only structured JSON (no images).
     """
+    if not VISION_ENABLED or vision_client is None:
+        return {"answer": "Google Vision API is not configured on the server. OCR functionality is disabled.", "steps": [], "tables": [], "links": []}
+    
     try:
         content = await file.read()
+        extracted_text = ""
 
-        # Convert to image for OCR
-        img_cv = cv2.imdecode(np.frombuffer(content, np.uint8), cv2.IMREAD_COLOR)
-        if img_cv is None:
-            return {"answer": "Invalid image format", "steps": [], "tables": [], "links": []}
-
-        # OCR extract text
-        extracted_text = pytesseract.image_to_string(img_cv)
+        # Use Google Vision API for text detection (Full Document Text Detection)
+        try:
+            # The client handles the API call and image processing from raw bytes
+            image = vision.Image(content=content)
+            
+            # Use DOCUMENT_TEXT_DETECTION for detailed, full-page OCR
+            response = vision_client.document_text_detection(image=image)
+            extracted_text = response.full_text_annotation.text
+            
+        except Exception as e:
+            print(f"Google Vision API Error: {e}")
+            return {"answer": "OCR failed. Could not process image using Google Vision.", "steps": [], "tables": [], "links": []}
 
         # LLM prompt for missing fields
         prompt = f"""
@@ -163,11 +184,12 @@ Respond strictly in JSON:
             try:
                 parsed = json.loads(suggestions)
             except:
+                # Fallback if LLM doesn't return perfect JSON
                 parsed = {"answer": suggestions, "steps": [], "tables": [], "links": []}
         except Exception as e:
             parsed = {"answer": f"AI analysis failed: {e}", "steps": [], "tables": [], "links": []}
 
-        # Return only structured JSON (no images)
+        # Return structured JSON
         return parsed
 
     except Exception as e:
