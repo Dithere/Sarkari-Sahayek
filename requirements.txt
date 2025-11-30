@@ -2,7 +2,8 @@ fastapi==0.115.2
 uvicorn==0.32.0
 
 # OpenAI API
-openai==1.53.0
+openai==1.44.0
+
 
 # Google Vision OCR
 google-cloud-vision==3.7.4
