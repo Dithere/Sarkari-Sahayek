@@ -10,7 +10,8 @@ import uvicorn
 import json
 import requests
 from google.cloud import vision # Updated to use Google Vision API
-
+from vosk import Model, KaldiRecognizer
+import wave
 # NOTE: Removed pytesseract and related imports and configuration.
 # The following imports are retained but no longer used in `analyze_form`
 # They might be relevant if image manipulation were added later.
@@ -327,7 +328,70 @@ Examples:
             "answer": "⚠️ Could not fetch eligible schemes. Please try again later.",
             "schemes": []
         }
+try:
+    VOSK_MODEL = Model("vosk-model-small-en-us-0.15")
+except Exception as e:
+    print(f"Error loading Vosk model. Did you download it? {e}")
+    VOSK_MODEL = None
 
+@app.post("/api/voice_to_text")
+async def voice_to_text_endpoint(file: UploadFile = File(...)):
+    """
+    1️⃣ Accepts an audio file (voice command).
+    2️⃣ Uses the free, offline Vosk model to transcribe the audio to text.
+    3️⃣ Returns the transcribed text.
+    """
+    if not VOSK_MODEL:
+        return {"text": "Error: Vosk model not loaded. Check server setup.", "error": True}
+
+    try:
+        # Vosk requires WAV format with specific properties (16kHz, mono PCM)
+        # This implementation assumes the client uploads a simple audio file (like WAV or MP3)
+        # For production use, you might need a library like pydub to convert audio formats.
+
+        # Read the file content
+        audio_content = await file.read()
+        
+        # Save to a temporary file for processing with wave/Vosk
+        temp_filename = f"/tmp/{file.filename}_{datetime.now().timestamp()}"
+        with open(temp_filename, "wb") as f:
+            f.write(audio_content)
+        
+        # Open the audio file using the standard wave library
+        with wave.open(temp_filename, "rb") as wf:
+            if wf.getnchannels() != 1 or wf.getframerate() != 16000:
+                # In a production setting, you would use pydub/ffmpeg to convert it here.
+                # For simplicity, we assume the frontend sends compatible audio (16kHz mono WAV).
+                return {"text": "Error: Vosk requires 16kHz, mono WAV audio. Please convert it.", "error": True}
+
+            # Initialize Vosk recognizer
+            rec = KaldiRecognizer(VOSK_MODEL, wf.getframerate())
+            rec.SetWords(False) # Faster transcription without word timing
+            
+            # Read all audio frames and process
+            while True:
+                data = wf.readframes(4000)
+                if len(data) == 0:
+                    break
+                rec.AcceptWaveform(data)
+
+            # Get the final result
+            final_result = rec.FinalResult()
+            
+            # Vosk returns a JSON string, which we parse and extract the 'text' field
+            transcribed_text = json.loads(final_result).get('text', '')
+            
+            # Clean up temporary file (add OS imports if needed)
+            import os
+            os.remove(temp_filename)
+
+            return {"text": transcribed_text, "error": False}
+
+    except Exception as e:
+        # Clean up temporary file if it exists
+        if 'temp_filename' in locals() and os.path.exists(temp_filename):
+            os.remove(temp_filename)
+        return {"text": f"Error: Failed to transcribe audio with Vosk. {str(e)}", "error": True}
 # -------------------------------
 # ▶️ Run Server
 # -------------------------------
