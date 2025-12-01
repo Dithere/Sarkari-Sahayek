@@ -1,26 +1,35 @@
 fastapi==0.115.2
 uvicorn==0.32.0
 
-# OpenAI API
+# -------------------------------
+# API Clients & HTTP
+# -------------------------------
 openai==1.109.1
-
-
-# Google Vision OCR
-google-cloud-vision==3.7.4
-google-api-core==2.21.0
-
-# For handling CORS
-starlette==0.40.0
-
-# Requests for API calls
 requests==2.32.3
 
-# Pydantic (FastAPI dependency)
+# -------------------------------
+# FastAPI Dependencies
+# -------------------------------
 pydantic==2.9.2
 pydantic-core==2.23.4
-
-# Optional structured JSON utilities
+starlette==0.40.0
 python-multipart==0.0.9
 
-# If deployment needs dotenv (optional)
+# -------------------------------
+# OCR (Image Analysis)
+# -------------------------------
+# NOTE: pytesseract also requires the external Tesseract-OCR binary to be installed on the system
+pytesseract
+Pillow
+numpy
+opencv-python
+
+# -------------------------------
+# Voice-to-Text (Free/Vosk)
+# -------------------------------
+vosk
+
+# -------------------------------
+# Optional
+# -------------------------------
 python-dotenv==1.0.1
