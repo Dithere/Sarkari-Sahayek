@@ -17,7 +17,7 @@ import wave
 # They might be relevant if image manipulation were added later.
 from datetime import datetime
 import zipfile
-
+from pydub import AudioSegment
 # -------------------------------
 # 🤖 Initialize OpenAI Client
 # -------------------------------
@@ -365,52 +365,50 @@ load_vosk_model()
 @app.post("/api/voice_to_text")
 async def voice_to_text_endpoint(file: UploadFile = File(...)):
     """
-    1️⃣ Accepts audio upload
-    2️⃣ Transcribes using offline Vosk engine
-    3️⃣ Returns clean text
+    Accepts any audio file (m4a/mp3/wav/aac)
+    Converts to 16kHz mono WAV for Vosk
+    Then transcribes
     """
 
     if not VOSK_MODEL:
-        return {"text": "Error: Vosk model not loaded on server.", "error": True}
+        return {"text": "Vosk model not loaded.", "error": True}
+
+    temp_input = f"/tmp/input_{datetime.now().timestamp()}"
+    temp_wav = f"/tmp/converted_{datetime.now().timestamp()}.wav"
 
     try:
-        audio_content = await file.read()
+        audio_bytes = await file.read()
 
-        # Save to /tmp
-        temp_filename = f"/tmp/{file.filename}_{datetime.now().timestamp()}.wav"
-        with open(temp_filename, "wb") as f:
-            f.write(audio_content)
+        # Save uploaded audio
+        with open(temp_input, "wb") as f:
+            f.write(audio_bytes)
 
-        # Vosk supports only PCM 16kHz mono WAV
-        wf = wave.open(temp_filename, "rb")
-        if wf.getnchannels() != 1 or wf.getframerate() != 16000:
-            wf.close()
-            os.remove(temp_filename)
-            return {
-                "text": "Audio must be 16kHz mono WAV. Convert before upload.",
-                "error": True
-            }
+        # Convert to WAV 16kHz mono using FFmpeg (pydub)
+        sound = AudioSegment.from_file(temp_input)
+        sound = sound.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+        sound.export(temp_wav, format="wav")
 
+        wf = wave.open(temp_wav, "rb")
         rec = KaldiRecognizer(VOSK_MODEL, wf.getframerate())
         rec.SetWords(False)
 
         while True:
             data = wf.readframes(4000)
-            if len(data) == 0:
+            if not data:
                 break
             rec.AcceptWaveform(data)
 
-        result = rec.FinalResult()
-        text = json.loads(result).get("text", "")
+        result = json.loads(rec.FinalResult()).get("text", "")
 
         wf.close()
-        os.remove(temp_filename)
-
-        return {"text": text, "error": False}
+        os.remove(temp_input)
+        os.remove(temp_wav)
+        return {"text": result, "error": False}
 
     except Exception as e:
-        if 'temp_filename' in locals() and os.path.exists(temp_filename):
-            os.remove(temp_filename)
+        # cleanup
+        if os.path.exists(temp_input): os.remove(temp_input)
+        if os.path.exists(temp_wav): os.remove(temp_wav)
         return {"text": f"Error during transcription: {str(e)}", "error": True}
 # -------------------------------
 # ▶️ Run Server
