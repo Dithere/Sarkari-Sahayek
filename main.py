@@ -16,8 +16,7 @@ import wave
 # The following imports are retained but no longer used in `analyze_form`
 # They might be relevant if image manipulation were added later.
 from datetime import datetime
-import zipfile
-from pydub import AudioSegment
+
 # -------------------------------
 # 🤖 Initialize OpenAI Client
 # -------------------------------
@@ -365,50 +364,52 @@ load_vosk_model()
 @app.post("/api/voice_to_text")
 async def voice_to_text_endpoint(file: UploadFile = File(...)):
     """
-    Accepts any audio file (m4a/mp3/wav/aac)
-    Converts to 16kHz mono WAV for Vosk
-    Then transcribes
+    1️⃣ Accepts audio upload
+    2️⃣ Transcribes using offline Vosk engine
+    3️⃣ Returns clean text
     """
 
     if not VOSK_MODEL:
-        return {"text": "Vosk model not loaded.", "error": True}
-
-    temp_input = f"/tmp/input_{datetime.now().timestamp()}"
-    temp_wav = f"/tmp/converted_{datetime.now().timestamp()}.wav"
+        return {"text": "Error: Vosk model not loaded on server.", "error": True}
 
     try:
-        audio_bytes = await file.read()
+        audio_content = await file.read()
 
-        # Save uploaded audio
-        with open(temp_input, "wb") as f:
-            f.write(audio_bytes)
+        # Save to /tmp
+        temp_filename = f"/tmp/{file.filename}_{datetime.now().timestamp()}.wav"
+        with open(temp_filename, "wb") as f:
+            f.write(audio_content)
 
-        # Convert to WAV 16kHz mono using FFmpeg (pydub)
-        sound = AudioSegment.from_file(temp_input)
-        sound = sound.set_frame_rate(16000).set_channels(1).set_sample_width(2)
-        sound.export(temp_wav, format="wav")
+        # Vosk supports only PCM 16kHz mono WAV
+        wf = wave.open(temp_filename, "rb")
+        if wf.getnchannels() != 1 or wf.getframerate() != 16000:
+            wf.close()
+            os.remove(temp_filename)
+            return {
+                "text": "Audio must be 16kHz mono WAV. Convert before upload.",
+                "error": True
+            }
 
-        wf = wave.open(temp_wav, "rb")
         rec = KaldiRecognizer(VOSK_MODEL, wf.getframerate())
         rec.SetWords(False)
 
         while True:
             data = wf.readframes(4000)
-            if not data:
+            if len(data) == 0:
                 break
             rec.AcceptWaveform(data)
 
-        result = json.loads(rec.FinalResult()).get("text", "")
+        result = rec.FinalResult()
+        text = json.loads(result).get("text", "")
 
         wf.close()
-        os.remove(temp_input)
-        os.remove(temp_wav)
-        return {"text": result, "error": False}
+        os.remove(temp_filename)
+
+        return {"text": text, "error": False}
 
     except Exception as e:
-        # cleanup
-        if os.path.exists(temp_input): os.remove(temp_input)
-        if os.path.exists(temp_wav): os.remove(temp_wav)
+        if 'temp_filename' in locals() and os.path.exists(temp_filename):
+            os.remove(temp_filename)
         return {"text": f"Error during transcription: {str(e)}", "error": True}
 # -------------------------------
 # ▶️ Run Server
