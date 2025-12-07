@@ -327,7 +327,8 @@ Examples:
         return {
             "answer": "⚠️ Could not fetch eligible schemes. Please try again later.",
             "schemes": []
-        }MODEL_DIR = "/tmp/vosk-model-small-en-us-0.15"
+        }
+MODEL_DIR = "/tmp/vosk-model-small-en-us-0.15"
 MODEL_URL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
 VOSK_MODEL = None
 
