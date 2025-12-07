@@ -8,6 +8,7 @@ services:
     buildCommand: |
       echo "python-3.10.14" > runtime.txt
       apt-get update
+      apt-get install -y portaudio19-dev python3-dev build-essential
       apt-get install -y tesseract-ocr
       apt-get install -y ffmpeg
       pip install -r requirements.txt
