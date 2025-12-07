@@ -16,7 +16,7 @@ import wave
 # The following imports are retained but no longer used in `analyze_form`
 # They might be relevant if image manipulation were added later.
 from datetime import datetime
-
+import zipfile
 # -------------------------------
 # 🤖 Initialize OpenAI Client
 # -------------------------------
