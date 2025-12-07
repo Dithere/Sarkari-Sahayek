@@ -21,7 +21,7 @@ import zipfile
 # 🤖 Initialize OpenAI Client
 # -------------------------------
 import os
-
+import feedparser
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # -------------------------------
@@ -205,30 +205,41 @@ async def upload_document(file: UploadFile = File(...), session_id: str = Form(d
 # -------------------------------
 # 📰 Notifications System
 # -------------------------------
+import feedparser
+from fastapi import FastAPI
+
+app = FastAPI()
 all_notifications = []
 
-def fetch_notifications():
-    url = "https://apisetu.gov.in/public/sector/notifications"
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            if isinstance(data, list) and len(data) > 0:
-                global all_notifications
-                new_items = [n for n in data if n not in all_notifications]
-                all_notifications = new_items + all_notifications
-                return data
-            else:
-                return all_notifications[:3]
-        else:
-            return all_notifications[:3]
-    except Exception as e:
-        print("Error fetching notifications:", e)
-        return all_notifications[:3]
+# List of RSS feeds you want to fetch from
+RSS_FEEDS = [
+    "https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en",
+    "https://www.thehindu.com/news/national/feeder/default.rss"
+]
+
+def fetch_news_rss():
+    global all_notifications
+    new_items = []
+
+    for feed_url in RSS_FEEDS:
+        feed = feedparser.parse(feed_url)
+        for entry in feed.entries:
+            item = {
+                "title": entry.get("title"),
+                "link": entry.get("link"),
+                "published": entry.get("published"),
+                "source": feed.feed.get("title")
+            }
+            if item not in all_notifications:
+                new_items.append(item)
+
+    all_notifications = new_items + all_notifications
+    # Return top 10 latest news
+    return all_notifications[:10]
 
 @app.get("/api/notifications")
 async def get_notifications():
-    return fetch_notifications()
+    return fetch_news_rss()
 # -------------------------------
 # 📋 Eligibility Model
 # -------------------------------
