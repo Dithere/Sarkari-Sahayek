@@ -208,10 +208,7 @@ async def upload_document(file: UploadFile = File(...), session_id: str = Form(d
 # -------------------------------
 # 📰 Notifications System
 # -------------------------------
-import feedparser
-from fastapi import FastAPI
 
-app = FastAPI()
 all_notifications = []
 
 # List of RSS feeds you want to fetch from
