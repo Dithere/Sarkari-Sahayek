@@ -46,8 +46,11 @@ app = FastAPI(title="Sarkari Sahayak API", version="5.0")
 # ✅ Allow Frontend Access (CORS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://sarkari-sahayek-frontend-1.onrender.com",
-    "http://localhost:5173", ],
+    allow_origins=[
+        "https://sarkari-sahayek-frontend-1.onrender.com",   # frontend
+        "https://sarkari-sahayek-1.onrender.com",            # backend
+        "http://localhost:5173"                              # dev
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
