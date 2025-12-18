@@ -22,6 +22,10 @@ import zipfile
 # -------------------------------
 import os
 import feedparser
+import easyocr
+import numpy as np
+from PIL import Image
+import io
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # -------------------------------
@@ -130,81 +134,38 @@ Instructions for output:
 # -------------------------------
 # 🧾 Document & Form Helper (Now using Google Vision)
 # -------------------------------
+# Initialize EasyOCR (English + Hindi) once for efficiency
+reader = easyocr.Reader(['en', 'hi'], gpu=False)
+
 @app.post("/api/analyze_form")
 async def analyze_form(file: UploadFile = File(...), session_id: str = Form(default="")):
-    """
-    1️⃣ Accepts image or screenshot of a government form.
-    2️⃣ Detects empty or blank fields via Google Vision OCR.
-    3️⃣ Uses LLM to suggest what should be filled.
-    4️⃣ Returns only structured JSON (no images).
-    """
-    if not VISION_ENABLED or vision_client is None:
-        return {"answer": "Google Vision API is not configured on the server. OCR functionality is disabled.", "steps": [], "tables": [], "links": []}
-    
     try:
+        # Step 1 & 2: Load image and OCR using EasyOCR (pure Python/PyTorch)
         content = await file.read()
-        extracted_text = ""
+        image = Image.open(io.BytesIO(content)).convert("RGB")
+        extracted_text = " ".join(reader.readtext(np.array(image), detail=0))
 
-        # Use Google Vision API for text detection (Full Document Text Detection)
-        try:
-            # The client handles the API call and image processing from raw bytes
-            image = vision.Image(content=content)
-            
-            # Use DOCUMENT_TEXT_DETECTION for detailed, full-page OCR
-            response = vision_client.document_text_detection(image=image)
-            extracted_text = response.full_text_annotation.text
-            
-        except Exception as e:
-            print(f"Google Vision API Error: {e}")
-            return {"answer": "OCR failed. Could not process image using Google Vision.", "steps": [], "tables": [], "links": []}
+        if not extracted_text.strip():
+            return {"answer": "OCR failed to detect text.", "steps": [], "tables": [], "links": []}
 
-        # LLM prompt for missing fields
-        prompt = f"""
-You are an expert in Indian government forms.
-Below is text extracted from a user's uploaded form:
----
-{extracted_text}
----
-Some fields are blank or have empty boxes.
-Identify what information should be filled in each blank field.
-Respond strictly in JSON:
-{{
-  "answer": "Summary of the form type",
-  "steps": ["Field 1 - what to fill", "Field 2 - what to fill", ...],
-  "tables": [],
-  "links": []
-}}
-"""
-
-        try:
-            llm = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You analyze and assist with Indian government forms."},
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            suggestions = llm.choices[0].message.content.strip()
-            try:
-                parsed = json.loads(suggestions)
-            except:
-                # Fallback if LLM doesn't return perfect JSON
-                parsed = {"answer": suggestions, "steps": [], "tables": [], "links": []}
-        except Exception as e:
-            parsed = {"answer": f"AI analysis failed: {e}", "steps": [], "tables": [], "links": []}
-
-        # Return structured JSON
-        return parsed
+        # Step 3: LLM Analysis
+        prompt = f"You are an expert in Indian government forms. Analyze this extracted text and identify blank fields:\n---\n{extracted_text}\n---\nRespond strictly in JSON with keys: answer, steps, tables, links."
+        
+        llm = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": "You analyze Indian government forms."}, {"role": "user", "content": prompt}]
+        )
+        
+        # Step 4: Parse and Return JSON
+        res_content = llm.choices[0].message.content.strip().replace("```json", "").replace("```", "")
+        return json.loads(res_content)
 
     except Exception as e:
-        print("Error analyzing form:", e)
-        return {"answer": f"Error analyzing form: {e}", "steps": [], "tables": [], "links": []}
+        return {"answer": f"Error: {str(e)}", "steps": [], "tables": [], "links": []}
 
-# ⚡ Frontend alias to prevent 404
 @app.post("/api/upload_document")
 async def upload_document(file: UploadFile = File(...), session_id: str = Form(default="")):
     return await analyze_form(file, session_id=session_id)
-
 # -------------------------------
 # 📰 Notifications System
 # -------------------------------
