@@ -22,7 +22,7 @@ import zipfile
 # -------------------------------
 import os
 import feedparser
-from tesseract_bin import tesseract_bin
+import fitz
 import numpy as np
 from PIL import Image
 import io
@@ -115,8 +115,8 @@ Instructions for output:
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "system", "content": system_prompt}] + session_history,
-            temperature=0.7,
-            max_tokens=1000,
+            temperature=0.3,
+            max_tokens=600,
         )
 
         raw_reply = completion.choices[0].message.content.strip()
@@ -137,29 +137,27 @@ Instructions for output:
 # 🧾 Document & Form Helper (Now using Google Vision)
 # -------------------------------
 # Initialize EasyOCR (English + Hindi) once for efficiency
-pytesseract.pytesseract.tesseract_cmd = tesseract_bin
-
 @app.post("/api/analyze_form")
 async def analyze_form(file: UploadFile = File(...), session_id: str = Form(default="")):
     try:
         content = await file.read()
-        image = Image.open(io.BytesIO(content))
+        # Open image using PyMuPDF (extremely lightweight)
+        doc = fitz.open(stream=content, filetype="png")
+        page = doc[0]
         
-        # Lightweight OCR using Tesseract binary
-        extracted_text = pytesseract.image_to_string(image)
+        # Extract text directly (works if the image has a text layer or via built-in engine)
+        extracted_text = page.get_text()
 
         if not extracted_text.strip():
-            return {"answer": "No text detected in the image.", "steps": [], "tables": [], "links": []}
+            return {"answer": "No text detected. Try a higher resolution image.", "steps": [], "tables": [], "links": []}
 
-        prompt = f"Identify blank fields in this Indian government form text:\n{extracted_text}\nRespond strictly in JSON."
-        
+        prompt = f"Analyze this Indian government form text and identify blank fields:\n{extracted_text}\nRespond strictly in JSON."
         llm = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "system", "content": "You analyze Indian government forms."}, {"role": "user", "content": prompt}]
         )
         
-        res_text = llm.choices[0].message.content.strip().replace("```json", "").replace("```", "")
-        return json.loads(res_text)
+        return json.loads(llm.choices[0].message.content.strip().replace("```json", "").replace("```", ""))
 
     except Exception as e:
         return {"answer": f"Analysis failed: {str(e)}", "steps": [], "tables": [], "links": []}
