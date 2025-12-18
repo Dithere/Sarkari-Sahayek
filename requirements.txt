@@ -20,7 +20,6 @@ python-multipart==0.0.9
 # OCR (Image Analysis)
 # -------------------------------
 # NOTE: pytesseract also requires the external Tesseract-OCR binary to be installed on the system
-pytesseract
 Pillow
 numpy
 opencv-python
@@ -34,6 +33,6 @@ vosk
 # Optional
 # -------------------------------
 python-dotenv==1.0.1
-tesseract-bin
+pymupdf
 Pillow
 numpy
