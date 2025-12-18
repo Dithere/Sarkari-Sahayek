@@ -22,10 +22,11 @@ import zipfile
 # -------------------------------
 import os
 import feedparser
-import easyocr
+from tesseract_bin import tesseract_bin
 import numpy as np
 from PIL import Image
 import io
+import pytesseract
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # -------------------------------
@@ -53,7 +54,8 @@ app.add_middleware(
     allow_origins=[
         "https://sarkari-sahayek-frontend-1.onrender.com",   # frontend
         "https://sarkari-sahayek-1.onrender.com",            # backend
-        "http://localhost:5173"                              # dev
+        "http://localhost:5173",
+        "https://sarkari-sahayek-frontend.vercel.app"# dev
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -135,33 +137,32 @@ Instructions for output:
 # 🧾 Document & Form Helper (Now using Google Vision)
 # -------------------------------
 # Initialize EasyOCR (English + Hindi) once for efficiency
-reader = easyocr.Reader(['en', 'hi'], gpu=False)
+pytesseract.pytesseract.tesseract_cmd = tesseract_bin
 
 @app.post("/api/analyze_form")
 async def analyze_form(file: UploadFile = File(...), session_id: str = Form(default="")):
     try:
-        # Step 1 & 2: Load image and OCR using EasyOCR (pure Python/PyTorch)
         content = await file.read()
-        image = Image.open(io.BytesIO(content)).convert("RGB")
-        extracted_text = " ".join(reader.readtext(np.array(image), detail=0))
+        image = Image.open(io.BytesIO(content))
+        
+        # Lightweight OCR using Tesseract binary
+        extracted_text = pytesseract.image_to_string(image)
 
         if not extracted_text.strip():
-            return {"answer": "OCR failed to detect text.", "steps": [], "tables": [], "links": []}
+            return {"answer": "No text detected in the image.", "steps": [], "tables": [], "links": []}
 
-        # Step 3: LLM Analysis
-        prompt = f"You are an expert in Indian government forms. Analyze this extracted text and identify blank fields:\n---\n{extracted_text}\n---\nRespond strictly in JSON with keys: answer, steps, tables, links."
+        prompt = f"Identify blank fields in this Indian government form text:\n{extracted_text}\nRespond strictly in JSON."
         
         llm = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "system", "content": "You analyze Indian government forms."}, {"role": "user", "content": prompt}]
         )
         
-        # Step 4: Parse and Return JSON
-        res_content = llm.choices[0].message.content.strip().replace("```json", "").replace("```", "")
-        return json.loads(res_content)
+        res_text = llm.choices[0].message.content.strip().replace("```json", "").replace("```", "")
+        return json.loads(res_text)
 
     except Exception as e:
-        return {"answer": f"Error: {str(e)}", "steps": [], "tables": [], "links": []}
+        return {"answer": f"Analysis failed: {str(e)}", "steps": [], "tables": [], "links": []}
 
 @app.post("/api/upload_document")
 async def upload_document(file: UploadFile = File(...), session_id: str = Form(default="")):
