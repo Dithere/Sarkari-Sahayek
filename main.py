@@ -26,7 +26,6 @@ import fitz
 import numpy as np
 from PIL import Image
 import io
-import pytesseract
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # -------------------------------
