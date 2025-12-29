@@ -331,6 +331,10 @@ load_vosk_model()
 # -------------------------------
 #   Voice to Text API
 # -------------------------------
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 @app.post("/api/voice_to_text")
 async def voice_to_text_endpoint(file: UploadFile = File(...)):
     """
